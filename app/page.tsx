@@ -1,103 +1,231 @@
-import Image from "next/image";
+// async function getCompanies() {
+//   // This fetch runs on the server at build time.
+//   const res = await fetch("http://localhost:8000/api/companies", {
+//     cache: 'force-cache' // The default behavior, great for SSG
+//   });
+
+//   if (!res.ok) {
+//     throw new Error("Failed to fetch companies");
+//   }
+
+//   const data = await res.json();
+//   return data.companies.map((c: any) => c.name);
+// }
+
+"use client";
+import { useState, useEffect, useMemo } from 'react';
+import EsgFilterSlider from './components/EsgFilterSlider';
+import CompanyCard from './components/CompanyCard';
+import ScreenedOutCompanyCard from './components/ScreenedOutCompanyCard';
+import { Company } from './types';
+
+const initialSliderState = {
+  "Climate & Carbon": 1,
+  "Pollution & Waste": 1,
+  "Labor & Employees": 1,
+  "Community & Customers": 1,
+  "Supply Chain": 1,
+  "Corporate Governance": 1,
+  "Corporate Behavior": 1,
+};
+
+// Helper to calculate overall ESG score
+const calculateOverallEsg = (esgRatings: Company['esg_ratings']) => {
+  if (!esgRatings || Object.keys(esgRatings).length === 0) {
+    return 0;
+  }
+  const total = Object.values(esgRatings).reduce((acc, { rating }) => acc + rating, 0);
+  return total / Object.keys(esgRatings).length;
+};
+
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [sliderValues, setSliderValues] = useState(initialSliderState);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState('name-asc');
+  const [isScreenedOutVisible, setIsScreenedOutVisible] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch("http://localhost:8000/api/companies");
+        if (!res.ok) {
+          throw new Error(`Failed to fetch companies: ${res.statusText}`);
+        }
+        const data = await res.json();
+        setCompanies(data.companies);
+        setError(null);
+      } catch (err: any) {
+        setError(err.message);
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCompanies();
+  }, []);
+
+
+  const handleSliderChange = (category: string, newValue: number) => {
+    setSliderValues(prevValues => ({
+      ...prevValues,
+      [category]: newValue,
+    }));
+  };
+
+  const resetFilters = () => {
+    setSliderValues(initialSliderState);
+    setSearchTerm('');
+    setSortOrder('name-asc');
+    console.log("Filters reset!");
+  };
+
+  const { passed, failed } = useMemo(() => {
+    const passed: Company[] = [];
+    const failed: (Company & { reasons: string[] })[] = [];
+
+    companies
+      .filter(company =>
+        company.name.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .forEach(company => {
+        if (!company.esg_ratings) {
+          failed.push({ ...company, reasons: ["Missing ESG ratings."] });
+          return;
+        }
+
+        const failedCriteria: string[] = [];
+        for (const [category, minRating] of Object.entries(sliderValues)) {
+          const companyRating = company.esg_ratings[category]?.rating;
+
+          // Check if the company's rating is below the minimum set by the slider
+          if (companyRating !== undefined && companyRating < minRating) {
+            failedCriteria.push(`Failed on ${category} (Score: ${companyRating}, Your Min: ${minRating})`);
+          }
+        }
+
+        if (failedCriteria.length > 0) {
+          failed.push({ ...company, reasons: failedCriteria });
+        } else {
+          passed.push(company);
+        }
+      });
+
+    // Sorting for passed companies
+    passed.sort((a, b) => {
+      switch (sortOrder) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        case 'esg-asc':
+          return calculateOverallEsg(a.esg_ratings) - calculateOverallEsg(b.esg_ratings);
+        case 'esg-desc':
+          return calculateOverallEsg(b.esg_ratings) - calculateOverallEsg(a.esg_ratings);
+        default:
+          return 0;
+      }
+    });
+
+    return { passed, failed };
+  }, [companies, searchTerm, sliderValues, sortOrder]);
+
+  return (
+    <div className="min-h-screen flex flex-col md:flex-row bg-gray-50">
+      {/* Left Column: Control Panel */}
+      <div className="w-full md:w-[30%] bg-white p-6 border-r border-gray-200 flex flex-col">
+        <div>
+          <h1 className="text-2xl font-bold mb-2">Customize Your Minimum ESG Criteria</h1>
+          <p className="text-gray-600 mb-6">
+            Showing {passed.length} / {companies.length} Companies
+          </p>
+          
+          <div className="mb-6">
+            <input
+              type="text"
+              placeholder="Search by company name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full p-2 border border-gray-300 rounded-md"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          </div>
+
+          {Object.keys(initialSliderState).map(category => (
+            <EsgFilterSlider 
+              key={category}
+              category={category}
+              methodology={`Minimum acceptable rating for ${category}.`}
+              value={sliderValues[category as keyof typeof sliderValues]}
+              onChange={(newValue) => handleSliderChange(category, newValue)}
+            />
+          ))}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+
+        <button 
+          onClick={resetFilters}
+          className="w-full bg-gray-800 text-white py-2 px-4 rounded hover:bg-gray-700 transition-colors mt-6"
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          Reset Filters
+        </button>
+      </div>
+
+      {/* Right Column: Results Display */}
+      <div className="w-full md:w-[70%] p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold">Results Display</h1>
+        </div>
+        
+        {loading && <p>Loading companies...</p>}
+        {error && <p className="text-red-500">Error: {error}</p>}
+        {!loading && !error && (
+          <>
+            <div className="space-y-4">
+              {passed.map(company => (
+                <CompanyCard 
+                  key={company.id}
+                  // TODO: Add logo and ticker to the database and API
+                  logoUrl={`https://logo.clearbit.com/${company.name.replace(/\s+/g, '').toLowerCase()}.com`}
+                  name={company.name}
+                  ticker={company.name.substring(0, 4).toUpperCase()} // Placeholder
+                  esgRatings={company.esg_ratings}
+                />
+              ))}
+            </div>
+
+            {failed.length > 0 && (
+              <div className="mt-8">
+                <button
+                  onClick={() => setIsScreenedOutVisible(!isScreenedOutVisible)}
+                  className="w-full text-left p-3 bg-gray-200 border border-gray-300 rounded-lg hover:bg-gray-300 focus:outline-none transition-colors"
+                >
+                  <span className="font-semibold text-gray-800">
+                    View {failed.length} Screened-Out Companies {isScreenedOutVisible ? '▲' : '▼'}
+                  </span>
+                </button>
+                {isScreenedOutVisible && (
+                  <div className="mt-4 border-t pt-4">
+                    {failed.map(company => (
+                      <ScreenedOutCompanyCard
+                        key={company.id}
+                        logoUrl={`https://logo.clearbit.com/${company.name.replace(/\s+/g, '').toLowerCase()}.com`}
+                        name={company.name}
+                        ticker={company.name.substring(0, 4).toUpperCase()} // Placeholder
+                        reasons={company.reasons}
+                        esgRatings={company.esg_ratings}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
