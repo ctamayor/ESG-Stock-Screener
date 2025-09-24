@@ -53,11 +53,23 @@ export default function Home() {
     const fetchCompanies = async () => {
       try {
         setLoading(true);
+        console.log("Frontend: Attempting to fetch from URL: /api/companies");
         const res = await fetch(`/api/companies`);
+        console.log("Frontend: Received response object:", {
+          status: res.status,
+          statusText: res.statusText,
+          ok: res.ok,
+          headers: Object.fromEntries(res.headers.entries())
+        });
+
         if (!res.ok) {
-          throw new Error(`Failed to fetch companies: ${res.statusText}`);
+          // Try to get more error details from the response body
+          const errorBody = await res.text();
+          console.error("Frontend: Fetch failed. Response body:", errorBody);
+          throw new Error(`Failed to fetch companies: Server responded with ${res.status} ${res.statusText}`);
         }
         const data = await res.json();
+        console.log("Frontend: Successfully fetched and parsed data.");
         setCompanies(data.companies);
         setError(null);
       } catch (err: any) {
