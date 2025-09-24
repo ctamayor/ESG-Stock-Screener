@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from . import crud, models, database
+import os
 
 models.Base.metadata.create_all(bind=database.engine)
 
@@ -12,13 +13,11 @@ app = FastAPI()
 # This is important for allowing your Next.js frontend
 # to communicate with this backend server.
 # The origin "http://localhost:3000" is the default for Next.js apps.
-origins = [
-    "http://localhost:3000",
-]
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
