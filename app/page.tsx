@@ -53,7 +53,7 @@ export default function Home() {
     const fetchCompanies = async () => {
       try {
         setLoading(true);
-        const res = await fetch("http://localhost:8000/api/companies");
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/companies`);
         if (!res.ok) {
           throw new Error(`Failed to fetch companies: ${res.statusText}`);
         }
