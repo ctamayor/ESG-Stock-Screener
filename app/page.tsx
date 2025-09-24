@@ -53,7 +53,7 @@ export default function Home() {
     const fetchCompanies = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${process.env.VERCEL_URL}/api/companies`);
+        const res = await fetch(`/api/companies`);
         if (!res.ok) {
           throw new Error(`Failed to fetch companies: ${res.statusText}`);
         }

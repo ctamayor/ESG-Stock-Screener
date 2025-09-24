@@ -13,7 +13,7 @@ app = FastAPI()
 # This is important for allowing your Next.js frontend
 # to communicate with this backend server.
 # The origin "http://localhost:3000" is the default for Next.js apps.
-ALLOWED_ORIGINS = os.getenv("VERCEL_URL", "http://localhost:3000").split(",")
+ALLOWED_ORIGINS = [os.getenv("VERCEL_URL", "http://localhost:3000")]
 
 app.add_middleware(
     CORSMiddleware,
